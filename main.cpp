@@ -16,8 +16,6 @@
 #include "aim-info.h"
 
 
-static bool Parameter_Error = FALSE;		//参数错误标识
-static bool Print_Parameter_Debug = FALSE;	//Debug打印参数控制开关 FALSE / TRUE
 
 
 //全局结构体
@@ -66,13 +64,7 @@ void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-//释放句柄
-static VOID close_handle(HANDLE* info) {
-    if (*info) {
-        CloseHandle(*info);
-        *info = nullptr;
-    }
-}
+
 
 //程序重复检测
 static BOOL CheckRepeat() {
@@ -130,361 +122,9 @@ static BOOL CheckHead() {
 }
 
 
-// 检查文件是否存在
-static bool Is_File(const std::string& file_path) {
-    std::ifstream file(file_path.c_str());
-    return file.good();
-}
-
-// 检查 config.ini 文件是否存在
-static inline bool Check_ini() {
-    char exeFullPath[MAX_PATH] = { 0 };
-    GetModuleFileNameA(NULL, exeFullPath, MAX_PATH);
-    std::string::size_type pos = std::string(exeFullPath).find_last_of("\\/");
-    std::string exePath = std::string(exeFullPath).substr(0, pos) + "\\config.ini";
-
-    if (!Is_File(exePath)) {
-        return false;
-    }
-    return true;
-}
-
-// 设置配置文件路径
-static inline bool Set_Config_Path() {
-    char exeFullPath[MAX_PATH] = { 0 };
-    GetModuleFileNameA(NULL, exeFullPath, MAX_PATH);
-
-    std::string::size_type pos = std::string(exeFullPath).find_last_of("\\/");
-    std::string exePath = std::string(exeFullPath).substr(0, pos);
-    std::string Ini_Name = "\\config.ini";
-    cfg_info.Ini_Path = exePath + Ini_Name;
-
-    return true;
-}
-
-
-// ----------------------------------  字符编码转换  ---------------------------------- //
-
-std::wstring UTF8ToUnicode(const char* strSrc)
-{
-    std::wstring wstrRet;
-
-    if (NULL != strSrc) {
-        int len = MultiByteToWideChar(CP_UTF8, 0, strSrc, -1, NULL, 0) * sizeof(WCHAR);
-        WCHAR* strDst = new(std::nothrow) WCHAR[len + 1];
-
-        if (NULL != strDst) {
-            MultiByteToWideChar(CP_UTF8, 0, strSrc, -1, strDst, len);
-            wstrRet = strDst;;
-            delete[]strDst;
-        }
-    }
-    return wstrRet;
-}
-
-std::string UnicodeToAnsi(const WCHAR* strSrc) {
-    std::string strRet;
-
-    if (NULL != strSrc) {
-        int len = WideCharToMultiByte(CP_ACP, 0, strSrc, -1, NULL, 0, NULL, NULL);
-        char* strDst = new(std::nothrow) char[len + 1];
-
-        if (NULL != strDst) {
-            WideCharToMultiByte(CP_ACP, 0, strSrc, -1, strDst, len, NULL, NULL);
-            strRet = strDst;
-            delete[]strDst;
-        }
-    }
-    return strRet;
-}
-
-std::string UTF8ToAnsi(const char* strSrc) {
-    return UnicodeToAnsi(UTF8ToUnicode(strSrc).c_str());
-}
-
-// ----------------------------------  检查/打印ini参数  ---------------------------------- //
-//重载错误参数输出
-static inline void Print_Error_Parameter(int* info, const char* key, const char* val) {
-    if (info == NULL) {
-        std::cout << "[ " << key << " ] : - " << val << " - Read Error" << std::endl;
-        Parameter_Error = TRUE;
-    }
-    if (Print_Parameter_Debug) {
-        std::cout << "[ " << key << " ] \t- " << val << " = " << *info << std::endl;
-    }
-}
-static inline void Print_Error_Parameter(float* info, const char* key, const char* val) {
-    if (info == NULL) {
-        std::cout << "[ " << key << " ] : - " << val << " - Read Error" << std::endl;
-        Parameter_Error = TRUE;
-    }
-    if (Print_Parameter_Debug) {
-        std::cout << "[ " << key << " ] \t- " << val << " = " << *info << std::endl;
-    }
-}
-static inline void Print_Error_Parameter(std::string* info, const char* key, const char* val) {
-    if (info == NULL) {
-        std::cout << "[ " << key << " ] : - " << val << " - Read Error" << std::endl;
-        Parameter_Error = TRUE;
-    }
-
-    if (Print_Parameter_Debug) {
-        std::cout << "[ " << key << " ] \t- " << val << " = " << *info << std::endl;
-    }
-}
-
-// ----------------------------------  重载加载参数  ---------------------------------- //
-//加载节点参数
-static inline std::string Load_Str_Parameter(const char* Key, const char* Val) {
-    char temp[MAX_PATH];
-    GetPrivateProfileStringA(Key, Val, NULL, temp, MAX_PATH, cfg_info.Ini_Path.c_str());
-    return std::string(temp);
-}
-
-//加载Int参数
-static inline void Load_Node_Parameter(int* info, const char* Key, const char* Val) {
-    *info = GetPrivateProfileIntA(Key, Val, NULL, cfg_info.Ini_Path.c_str());
-    Print_Error_Parameter(info, Key, Val);
-}
-
-//加载Float参数
-static inline void Load_Node_Parameter(float* info, const char* Key, const char* Val) {
-    *info = strtod(Load_Str_Parameter(Key, Val).c_str(), NULL);
-    Print_Error_Parameter(info, Key, Val);
-}
-
-//加载String参数
-static inline void Load_Node_Parameter(std::string* info, const char* Key, const char* Val) {
-
-    *info = Load_Str_Parameter(Key, Val);
-    //std::cout << *info << std::endl;
-    Print_Error_Parameter(info, Key, Val);
-}
-
-//特殊节点,需要转字符编码
-static inline void Load_Node_Parameter_Name(std::string* info, const char* Key, const char* Val) {
-
-    char temp[MAX_PATH];
-    GetPrivateProfileStringA(Key, Val, NULL, temp, MAX_PATH, cfg_info.Ini_Path.c_str());
-    *info = UTF8ToAnsi(temp);
-    //std::cout << *info << std::endl;
-    Print_Error_Parameter(info, Key, Val);
-}
 
 
 
-// ----------------------------------  节点参数分装  ---------------------------------- //
-static void Load_Check_Parameter(int idx) {
-    //检查
-    Load_Node_Parameter(&cfg_info.Check.checking_Version, cfg_info.Node[idx], cfg_info.Check_val[0]);
-
-}
-
-static void Load_Move_Parameter(int idx) {
-    //移动
-    Load_Node_Parameter(&cfg_info.Move.move_manner, cfg_info.Node[idx], cfg_info.Move_val[0]);
-    Load_Node_Parameter(&cfg_info.Move.comx, cfg_info.Node[idx], cfg_info.Move_val[1]);
-}
-
-
-static void Load_Fov_Parameter(int idx) {
-    //FOV 
-    Load_Node_Parameter(&cfg_info.Fov.fov_off, cfg_info.Node[idx], cfg_info.Fov_val[0]);
-    Load_Node_Parameter(&cfg_info.Fov.game_HFOV, cfg_info.Node[idx], cfg_info.Fov_val[1]);
-    Load_Node_Parameter(&cfg_info.Fov.game_VFOV, cfg_info.Node[idx], cfg_info.Fov_val[2]);
-    Load_Node_Parameter(&cfg_info.Fov.game_x_pixel, cfg_info.Node[idx], cfg_info.Fov_val[3]);
-    Load_Node_Parameter(&cfg_info.Fov.game_y_pixel, cfg_info.Node[idx], cfg_info.Fov_val[4]);
-}
-
-static void Load_Pid_Parameter(int idx) {
-    //PID
-    Load_Node_Parameter(&cfg_info.Pid.pid_off, cfg_info.Node[idx], cfg_info.Pid_val[0]);
-    Load_Node_Parameter(&cfg_info.Pid.kp_x, cfg_info.Node[idx], cfg_info.Pid_val[1]);
-    Load_Node_Parameter(&cfg_info.Pid.ki_x, cfg_info.Node[idx], cfg_info.Pid_val[2]);
-    Load_Node_Parameter(&cfg_info.Pid.kd_x, cfg_info.Node[idx], cfg_info.Pid_val[3]);
-    Load_Node_Parameter(&cfg_info.Pid.kp_y, cfg_info.Node[idx], cfg_info.Pid_val[4]);
-    Load_Node_Parameter(&cfg_info.Pid.ki_y, cfg_info.Node[idx], cfg_info.Pid_val[5]);
-    Load_Node_Parameter(&cfg_info.Pid.kd_y, cfg_info.Node[idx], cfg_info.Pid_val[6]);
-    Load_Node_Parameter(&cfg_info.Pid.sample_num, cfg_info.Node[idx], cfg_info.Pid_val[7]);
-}
-
-static void Load_Aim_Parameter(int idx) {
-    //Aim
-    Load_Node_Parameter(&cfg_info.Aim.range_top, cfg_info.Node[idx], cfg_info.Aim_val[0]);
-    Load_Node_Parameter(&cfg_info.Aim.range_bottom, cfg_info.Node[idx], cfg_info.Aim_val[1]);
-    Load_Node_Parameter(&cfg_info.Aim.range_left, cfg_info.Node[idx], cfg_info.Aim_val[2]);
-    Load_Node_Parameter(&cfg_info.Aim.range_right, cfg_info.Node[idx], cfg_info.Aim_val[3]);
-    Load_Node_Parameter(&cfg_info.Aim.cla_off, cfg_info.Node[idx], cfg_info.Aim_val[4]);
-    Load_Node_Parameter(&cfg_info.Aim.label_chose, cfg_info.Node[idx], cfg_info.Aim_val[5]);
-    Load_Node_Parameter(&cfg_info.Aim.move_offset, cfg_info.Node[idx], cfg_info.Aim_val[6]);
-}
-
-static void Load_Fire_Parameter(int idx) {
-    //自动开火
-    Load_Node_Parameter(&cfg_info.Fire.auto_off, cfg_info.Node[idx], cfg_info.Fire_val[0]);
-    Load_Node_Parameter(&cfg_info.Fire.auto_method, cfg_info.Node[idx], cfg_info.Fire_val[1]);
-    Load_Node_Parameter(&cfg_info.Fire.auto_sleep, cfg_info.Node[idx], cfg_info.Fire_val[2]);
-}
-
-static void Load_Key_Parameter(int idx) {
-    //按键
-    Load_Node_Parameter(&cfg_info.Key.aim_off, cfg_info.Node[idx], cfg_info.Key_val[0]);
-    Load_Node_Parameter(&cfg_info.Key.key_method, cfg_info.Node[idx], cfg_info.Key_val[1]);
-    Load_Node_Parameter(&cfg_info.Key.button_key1, cfg_info.Node[idx], cfg_info.Key_val[2]);
-    Load_Node_Parameter(&cfg_info.Key.button_key2, cfg_info.Node[idx], cfg_info.Key_val[3]);
-    Load_Node_Parameter(&cfg_info.Key.end_key, cfg_info.Node[idx], cfg_info.Key_val[4]);
-}
-
-static void Load_Windows_Parameter(int idx) {
-    //窗口
-    Load_Node_Parameter(&cfg_info.Windows.capture_method, cfg_info.Node[idx], cfg_info.Win_val[0]);
-    Load_Node_Parameter(&cfg_info.Windows.win32_method, cfg_info.Node[idx], cfg_info.Win_val[1]);
-    //特殊节点，需要单独处理
-    Load_Node_Parameter_Name(&cfg_info.Windows.win32_name, cfg_info.Node[idx], cfg_info.Win_val[2]);
-    Load_Node_Parameter(&cfg_info.Windows.show, cfg_info.Node[idx], cfg_info.Win_val[3]);
-}
-
-static void Load_Pred_Parameter(int idx) {
-    //推理
-    Load_Node_Parameter(&cfg_info.Pred.engine_path, cfg_info.Node[idx], cfg_info.Pred_val[0]);
-    Load_Node_Parameter(&cfg_info.Pred.frame, cfg_info.Node[idx], cfg_info.Pred_val[1]);
-    Load_Node_Parameter(&cfg_info.Pred.conf, cfg_info.Node[idx], cfg_info.Pred_val[2]);
-    Load_Node_Parameter(&cfg_info.Pred.iou, cfg_info.Node[idx], cfg_info.Pred_val[3]);
-    Load_Node_Parameter(&cfg_info.Pred.sleep, cfg_info.Node[idx], cfg_info.Pred_val[4]);
-}
-static void Load_Other_Parameter(int idx) {
-    //其他
-    Load_Node_Parameter(&cfg_info.Other.console_refresh, cfg_info.Node[idx], cfg_info.Other_val[0]);
-}
-
-static bool Load_Parameter() {
-    //分装加载节点参数
-    Load_Check_Parameter(0);
-    Load_Move_Parameter(1);
-    Load_Fov_Parameter(2);
-    Load_Pid_Parameter(3);
-    Load_Aim_Parameter(4);
-    Load_Fire_Parameter(5);
-    Load_Key_Parameter(6);
-    Load_Pred_Parameter(7);
-    Load_Windows_Parameter(8);
-    Load_Other_Parameter(9);
-
-    return true;
-}
-//加载ini参数
-static bool Init_Parameter() {
-    //加载ini参数
-    if (!Load_Parameter()) {
-        return false;
-    }
-    if (!Is_File(cfg_info.Pred.engine_path)) {
-        std::cout << "找不到[ " << cfg_info.Pred.engine_path << " ]文件,检查文件是否存在和ini路径参数是否正确(严格检查)" << std::endl;
-        system("pause");
-        return false;
-    }
-    return true;
-}
-
-bool LoadConfig() {
-    //设置ini文件路径
-    if (!Set_Config_Path()) {
-        std::cout << "设置配置文件路径失败" << std::endl;
-        return false;
-    }
-
-    //检查是否存在ini文件
-    if (!Check_ini()) {
-        std::cout << "配置文件不存在" << std::endl;
-        return false;
-    }
-    //加载ini参数
-    if (!Init_Parameter()) {
-        std::cout << "Init_Parameter: 加载ini参数加载失败" << std::endl;
-        return false;
-    }
-
-    //是否存在读取错误参数
-    if (Parameter_Error) {
-        std::cout << "Init_Parameter: 有ini参数读取错误,检查参数" << std::endl;
-        return false;
-    }
-    std::cout << "加载配置文件 PASS..." << std::endl;
-    return true;
-}
-
-
-// ----------------------------------  Updata Thread  ---------------------------------- //
-
-long old_modify_time = 0;
-
-static inline bool Get_Last_File_Time() {
-    //获取最后修改时间
-    int fd = 0;
-    int size_fp = 0;
-    struct stat buff {};
-
-    FILE* fp = fopen(cfg_info.Ini_Path.c_str(), "r");
-    if (fp == NULL) {
-        std::cout << "打开文件失败" << std::endl;
-        return false;
-    }
-
-    //获取文件描述符
-    fd = fileno(fp);
-    //获取文件状态
-    fstat(fd, &buff);
-    //获取文件大小
-    size_fp = buff.st_size;
-    //获取文件修改时间
-    long modify_time = buff.st_mtime;
-    fclose(fp);
-
-    if (old_modify_time != modify_time) {
-        old_modify_time = modify_time;
-        return true;
-    }
-    return false;
-}
-
-//动态读取参数
-static inline bool Load_Updata_Parameter() {
-
-    //固定节点读取
-    Load_Fov_Parameter(2);
-    Load_Pid_Parameter(3);
-    Load_Aim_Parameter(4);
-    Load_Fire_Parameter(5);
-    Load_Key_Parameter(6);
-    Load_Other_Parameter(9);
-
-    //分散节点读取
-    //Pred
-    Load_Node_Parameter(&cfg_info.Pred.conf, cfg_info.Node[7], cfg_info.Pred_val[2]);
-    Load_Node_Parameter(&cfg_info.Pred.iou, cfg_info.Node[7], cfg_info.Pred_val[3]);
-    Load_Node_Parameter(&cfg_info.Pred.sleep, cfg_info.Node[7], cfg_info.Pred_val[4]);
-    //win
-    Load_Node_Parameter(&cfg_info.Windows.show, cfg_info.Node[8], cfg_info.Win_val[3]);
-
-    return true;
-}
-
-
-//动态读取线程
-bool dynamic_thread_loop() {
-
-    while (!Thread_Should_Stop()) {
-        //获取最后修改时间
-        if (Get_Last_File_Time()) {
-            //加载参数
-            Load_Updata_Parameter();
-        }
-        //延时检查
-        Sleep(1800);
-    }
-    std::cout << "动态读取线程退出" << std::endl;
-    return true;
-}
 
 
 static inline bool Check_Config_Version() {
@@ -515,6 +155,66 @@ static inline bool Init_capture() {
         std::cout << "BitBlt screenshot initialization PASS..." << std::endl;
     }
     return true;
+}
+
+void Write_Parameter_to_ini_file_key_method() {
+    std::ifstream fin(cfg_info.Ini_Path.c_str());
+    if (!fin.is_open()) {
+        std::cerr << "无法打开文件！" << std::endl;
+        return;
+    }
+    std::ostringstream oss;
+    oss << fin.rdbuf();  // 将整个文件读入一个字符串流中
+    fin.close();
+    std::string content = oss.str();
+    std::string new_value = std::to_string(cfg_info.Key.key_method); // 将截图方式设置为字符串类型
+    // 在新值字符串的末尾添加一个引号字符
+    new_value += "";
+    // 转义双引号
+    size_t quote_pos = new_value.find("\"", 0);
+    while (quote_pos != std::string::npos) {
+        new_value.insert(quote_pos, "\\");
+        quote_pos = new_value.find("\"", quote_pos + 2);
+    }
+
+    // 更改需要更新的参数的值
+    size_t start_pos = content.find("[ KEY ]");
+    if (start_pos == std::string::npos) {
+        std::cout << "找不到 [ KEY ] 节点" << std::endl;
+        return;
+    }
+    size_t end_pos = content.find_first_of("\n\r", start_pos + 1);
+    if (end_pos == std::string::npos) {
+        std::cout << "无效的节点" << std::endl;
+        return;
+    }
+    size_t capture_method_pos = content.find("key_method", start_pos + 1, end_pos - start_pos - 1);  // 查找参数位置
+    if (capture_method_pos == std::string::npos) {
+        // 如果参数不存在，就添加到末尾
+        content.insert(end_pos, "\key_method = " + new_value);
+    }
+    else {
+        size_t value_start_pos = content.find_first_not_of(" \t=", capture_method_pos + strlen("key_method"));  // 查找当前值起始位置
+        if (value_start_pos == std::string::npos) {
+            std::cout << "无效的参数值" << std::endl;
+            return;
+        }
+        size_t value_end_pos = content.find_first_of("\r\n", value_start_pos + 1);  // 查找当前值结束位置
+        if (value_end_pos == std::string::npos) {
+            value_end_pos = end_pos - 1;
+        }
+
+        content.replace(value_start_pos, value_end_pos - value_start_pos, new_value);  // 替换为新值
+    }
+
+    // 将更新后的配置文件内容写回文件
+    std::ofstream fout(cfg_info.Ini_Path);
+    if (!fout.is_open()) {
+        std::cerr << "无法写入文件！" << std::endl;
+        return;
+    }
+    fout << content;
+    fout.close();
 }
 
 void Write_Parameter_to_ini_file_capture_method() {
@@ -576,6 +276,65 @@ void Write_Parameter_to_ini_file_capture_method() {
     fout << content;
     fout.close();
 }
+
+void Write_Parameter_to_ini_file_move_manner() {
+    std::ifstream fin(cfg_info.Ini_Path.c_str());
+    if (!fin.is_open()) {
+        std::cerr << "无法打开文件！" << std::endl;
+        return;
+    }
+    std::ostringstream oss;
+    oss << fin.rdbuf();  // 将整个文件读入一个字符串流中
+    fin.close();
+    std::string content = oss.str();
+    std::string new_value = std::to_string(cfg_info.Move.move_manner); // 将截图方式设置为字符串类型
+    // 在新值字符串的末尾添加一个引号字符
+    new_value += "";
+    // 转义双引号
+    size_t quote_pos = new_value.find("\"", 0);
+    while (quote_pos != std::string::npos) {
+        new_value.insert(quote_pos, "\\");
+        quote_pos = new_value.find("\"", quote_pos + 2);
+    }
+    // 更改需要更新的参数的值
+    size_t start_pos = content.find("[ MOVE ]");
+    if (start_pos == std::string::npos) {
+        std::cout << "找不到 [ MOVE ] 节点" << std::endl;
+        return;
+    }
+    size_t end_pos = content.find_first_of("\n\r", start_pos + 1);
+    if (end_pos == std::string::npos) {
+        std::cout << "无效的节点" << std::endl;
+        return;
+    }
+    size_t capture_method_pos = content.find("move_manner", start_pos + 1, end_pos - start_pos - 1);  // 查找参数位置
+    if (capture_method_pos == std::string::npos) {
+        // 如果参数不存在，就添加到末尾
+        content.insert(end_pos, "\move_manner = " + new_value);
+    }
+    else {
+        size_t value_start_pos = content.find_first_not_of(" \t=", capture_method_pos + strlen("move_manner"));  // 查找当前值起始位置
+        if (value_start_pos == std::string::npos) {
+            std::cout << "无效的参数值" << std::endl;
+            return;
+        }
+        size_t value_end_pos = content.find_first_of("\r\n", value_start_pos + 1);  // 查找当前值结束位置
+        if (value_end_pos == std::string::npos) {
+            value_end_pos = end_pos - 1;
+        }
+
+        content.replace(value_start_pos, value_end_pos - value_start_pos, new_value);  // 替换为新值
+    }
+    // 将更新后的配置文件内容写回文件
+    std::ofstream fout(cfg_info.Ini_Path);
+    if (!fout.is_open()) {
+        std::cerr << "无法写入文件！" << std::endl;
+        return;
+    }
+    fout << content;
+    fout.close();
+}
+
 
 // -------------------------------  Tool  ------------------------------- //
 
@@ -955,6 +714,8 @@ static inline bool Set_Console() {
     return true;
 }
 
+bool is_ai_running = false; // 记录ai线程是否在运行
+
 static bool Open_Ai() {
     //设置控制台回调消息
     if (Set_Console())
@@ -971,6 +732,58 @@ static bool Open_Ai() {
         start_main();
 
     return 0;
+}
+void ai_thread() {
+    Open_Ai();
+    is_ai_running = false;
+}
+
+// -------------------------------  Free  ------------------------------- //
+static inline void close_handle(HANDLE* handle)
+{
+    if (*handle) {
+        CloseHandle(*handle);
+        *handle = nullptr;
+    }
+}
+//释放所有资源
+static inline void Free() {
+    //释放截图资源
+    global_data.capture_free();
+
+    //CUDA资源
+    Free_CUDA();
+
+    //移动句柄释放
+    global_data.Move_free();
+
+    //释放线程句柄
+    close_handle(&aim_move_thread);
+    close_handle(&Dynamic_Read_thread);
+
+
+    //释放可等候句柄
+    close_handle(&Aim_Event);
+
+    //释放互斥体句柄
+    close_handle(&repeat_run);
+
+    //卸载hook
+    UnhookWindowsHookEx(switch_hook);
+}
+
+static void Exit_Coda() {
+
+    SetEvent(Aim_Event);
+
+    WaitForSingleObject(aim_move_thread, INFINITE);	//等待自瞄线程退出
+
+    WaitForSingleObject(Dynamic_Read_thread, INFINITE);	//等待自瞄线程退出
+
+    //PostQuitMessage(0);
+    //释放函数
+    Free();
+
 }
 
 
@@ -1009,7 +822,11 @@ int main() {
     if (!Check_Config_Version()) {
         return 1;
     }
-
+    if (!hook_msg()) {
+        return 1;
+    }
+    
+    bool is_ai_running = false;
 
     WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("My_Ai"), NULL };
     ::RegisterClassEx(&wc);
@@ -1094,20 +911,23 @@ int main() {
             int Screen_Width{ GetSystemMetrics(SM_CXSCREEN) };//获取显示器的宽
             int Screen_Heigth{ GetSystemMetrics(SM_CYSCREEN) };//获取显示器的高
 
-            static bool CheckBox_1 = false, CheckBox_2 = true;
-            static int InputInt = 0;
-            static int TuiLi = 0;
-            static float InputFloat = 0;
-
             if (WinPos)//初始化窗口
             {
                 ImGui::SetNextWindowPos({ float(Screen_Width - 400) / 2,float(Screen_Heigth - 500) / 2 });
                 WinPos = false;//初始化完毕
             }
-
+            bool show_loading_window = false;
 
             bool show_window = true;
             int capture_method = cfg_info.Windows.capture_method;  // 获取当前截图方式
+            int key_method = cfg_info.Key.key_method;  // 获取当前截图方式
+            int move_manner = cfg_info.Move.move_manner;  // 获取当前截图方式
+            bool show = cfg_info.Windows.show;
+            bool show_debug_info = false;
+            bool PID = cfg_info.Pid.pid_off;
+            bool FOV = cfg_info.Fov.fov_off;
+
+
             ImGui::Begin(u8"My_Ai", &show_window, 0 | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
             if (!show_window)
             {
@@ -1121,14 +941,51 @@ int main() {
             if (ImGui::Combo(u8"截图方式", &capture_method, u8"dxgi顶层窗口\0Win32指定窗口")) {
                 cfg_info.Windows.capture_method = capture_method;  // 根据选择更新截图方式
                 Write_Parameter_to_ini_file_capture_method();  // 保存配置到文件
+                std::cout << "checking_Version = " << cfg_info.Windows.win32_name << std::endl;
             }
-            if (ImGui::Button(u8"开启Ai"))
-                if (!Open_Ai()) {
-                    return 1;
-                }
+            if (ImGui::Combo(u8"按键方式", &key_method, u8"右键\0自动")) {
+                cfg_info.Key.key_method = key_method;  // 根据选择更新按键方式
+                Write_Parameter_to_ini_file_key_method();  // 保存配置到文件
+            }
+            if (ImGui::Combo(u8"移动方式", &move_manner, u8"罗G\0KMBOX\0飞易来/易键鼠\0SendInput移动")) {
+                cfg_info.Move.move_manner = move_manner;  // 根据选择更新移动方式
+                Write_Parameter_to_ini_file_move_manner();  // 保存配置到文件
+            }
+
+            if (ImGui::Checkbox(u8"检测窗口",&show)) {
+                cfg_info.Windows.show = show;  // 根据选择更新检测窗口方式
+            }
+            if (ImGui::Checkbox(u8"PID", &PID)) {
+                cfg_info.Pid.pid_off = PID;  // 根据选择更新PID方式
+            }
+            if (ImGui::Checkbox(u8"FOV", &FOV)) {
+                cfg_info.Fov.fov_off = FOV;  // 根据选择更新FOV方式
+            }
+
+            if (!is_ai_running && ImGui::Button(u8"开启AI")) {
+                is_ai_running = true;
+                std::thread t(ai_thread);
+                t.detach();
+
+            }
+         
 
 
             ImGui::End();
+
+            // 如果AI线程正在运行，则显示等待消息
+            if (is_ai_running) {
+                show_loading_window = true;
+                /*imgui::setnextwindowsize(imvec2(200, 100), imguicond_appearing);
+                imgui::begin(u8"等待");
+                imgui::text(u8"ai 正在运行中...");
+                ImGui::End();*/
+            }
+            else {
+                if (show_loading_window) {
+                    show_loading_window = false;
+                } 
+            }
         }
 
         ImGui::Render();
@@ -1254,43 +1111,3 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 
-
-//释放所有资源
-static inline void Free() {
-    //释放截图资源
-    global_data.capture_free();
-
-    //CUDA资源
-    Free_CUDA();
-
-    //移动句柄释放
-    global_data.Move_free();
-
-    //释放线程句柄
-    close_handle(&aim_move_thread);
-    close_handle(&Dynamic_Read_thread);
-
-
-    //释放可等候句柄
-    close_handle(&Aim_Event);
-
-    //释放互斥体句柄
-    close_handle(&repeat_run);
-
-    //卸载hook
-    UnhookWindowsHookEx(switch_hook);
-}
-
-static void Exit_Coda() {
-
-    SetEvent(Aim_Event);
-
-    WaitForSingleObject(aim_move_thread, INFINITE);	//等待自瞄线程退出
-
-    WaitForSingleObject(Dynamic_Read_thread, INFINITE);	//等待自瞄线程退出
-
-    //PostQuitMessage(0);
-    //释放函数
-    Free();
-
-}
